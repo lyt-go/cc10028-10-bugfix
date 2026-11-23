@@ -63,6 +63,13 @@ class RelationExtractService(BaseModuleService):
         relations = []
         rel_counter = 0
 
+        # 归属证据：关系记录继承实体产物的批次键与文档编号，
+        # 后续关系文件即成为可核对的处理来源。
+        batch_key = next((str(e.get("batch_key", "")).strip()
+                          for e in entities if e.get("batch_key")), "")
+        doc_id = next((str(e.get("doc_id", "")).strip()
+                       for e in entities if e.get("doc_id")), "")
+
         # 按实体类型分组
         by_type = {}
         for e in entities:
@@ -86,6 +93,8 @@ class RelationExtractService(BaseModuleService):
 
                     relations.append({
                         "relation_id": f"REL-{rel_counter:06d}",
+                        "doc_id": doc_id,
+                        "batch_key": batch_key,
                         "head_entity": head["entity_text"],
                         "head_type": rule["head_type"],
                         "tail_entity": tail["entity_text"],
@@ -103,6 +112,12 @@ class RelationExtractService(BaseModuleService):
 
         output_path = self._data_dir("relations") / f"{entity_set_id}_relations.jsonl"
         written = self._write_jsonl(output_path, relations)
+
+        # 处理来源登记：关系产物携带可核对的处理来源，补齐老产物的来源缺口
+        if batch_key:
+            from app.services.batch_attribution import BatchAttributionService
+            BatchAttributionService().register_artifact_source(
+                batch_key, doc_id, output_path.name, "relation")
 
         # 写入检查点
         self._write_checkpoint(f"relation_{entity_set_id}", {

@@ -59,6 +59,12 @@ class EntityRecognizeService(BaseModuleService):
         entity_id_counter = 0
 # 数据操作：读取分块数据校验实体类型并抽取命名实体数据集
 
+        # 归属证据：批次键沿分块产物透传，实体记录自带来源批次与文档编号
+        batch_key = next((str(c.get("batch_key", "")).strip()
+                          for c in chunks if c.get("batch_key")), "")
+        doc_id = next((str(c.get("doc_id", "")).strip()
+                       for c in chunks if c.get("doc_id")), "")
+
         for chunk in chunks:
             text = chunk.get("text", "")
             chunk_id = chunk.get("chunk_id", "")
@@ -88,6 +94,8 @@ class EntityRecognizeService(BaseModuleService):
                         entities.append({
                             "entity_id": f"ENT-{entity_id_counter:06d}",
                             "chunk_id": chunk_id,
+                            "doc_id": doc_id,
+                            "batch_key": batch_key,
 # 数据产物：命名实体数据集写入entities目录持久化文件，触发下游关系数据集
                             "entity_type": ent_type,
                             "entity_text": ent_text,
@@ -104,6 +112,12 @@ class EntityRecognizeService(BaseModuleService):
 
         output_path = self._data_dir("entities") / f"{chunk_set_id}_entities.jsonl"
         written = self._write_jsonl(output_path, entities)
+
+        # 处理来源登记：实体产物归属到分块携带的批次，作为归属校验的产物级证据
+        if batch_key:
+            from app.services.batch_attribution import BatchAttributionService
+            BatchAttributionService().register_artifact_source(
+                batch_key, doc_id, output_path.name, "entity")
 
         # 写入检查点
         self._write_checkpoint(f"entity_{chunk_set_id}", {

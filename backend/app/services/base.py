@@ -126,6 +126,18 @@ class BaseModuleService:
                 written += 1
         return written
 
+    def _overwrite_jsonl(self, filepath: Path, records: list[dict[str, Any]]) -> int:
+        """以覆盖模式重写JSONL文件，返回写入条数。
+
+        用于报告重算等需要幂等刷新的产物：重算结果整体替换旧文件，
+        避免追加模式把历史数据重复计入当前批次。
+        """
+        _ensure_dir(filepath.parent)
+        with open(filepath, "w", encoding="utf-8") as f:
+            for rec in records:
+                f.write(json.dumps(rec, ensure_ascii=False, default=str) + "\n")
+        return len(records)
+
     def _read_jsonl(self, filepath: Path) -> list[dict[str, Any]]:
         """从JSONL文件读取全部记录，文件不存在返回空列表，脏行自动跳过。"""
         if not filepath.exists():

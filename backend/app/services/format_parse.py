@@ -85,6 +85,13 @@ class FormatParseService(BaseModuleService):
         doc_id = task["文档编号"]
         parser = task["解析器类型"]
 
+        # 归属证据：解析产物按接入清单确定批次，多个批次含同名文件时不猜测，
+        # 留空 batch_key，交由归属服务登记为待核。
+        from app.services.batch_attribution import BatchAttributionService
+        attribution = BatchAttributionService()
+        owners = attribution._batches_owning_doc(doc_id)
+        batch_key = owners[0]["batch_key"] if len(owners) == 1 else ""
+
         try:
             # 模拟文档解析
             content = self._simulate_doc_content(doc_id, paragraphs=8)
@@ -98,6 +105,7 @@ class FormatParseService(BaseModuleService):
             for p in pages:
                 parsed_records.append({
                     "doc_id": doc_id,
+                    "batch_key": batch_key,
 # 数据产物：解析page产物数据写入jsonl文件
                     "page_num": p["page"],
                     "paragraphs": len(p["paragraphs"]),
@@ -107,7 +115,13 @@ class FormatParseService(BaseModuleService):
                     "parser": parser,
                     "content_hash": self._compute_checksum("\n".join(p["paragraphs"])),
                 })
+            output_path = self._data_dir("parsed") / f"{doc_id}_parsed.jsonl"
             written = self._write_jsonl(output_path, parsed_records)
+
+            # 处理来源登记：记录「批次→文档→解析产物」，供下游归属校验核对
+            if batch_key:
+                attribution.register_artifact_source(
+                    batch_key, doc_id, output_path.name, "parsed")
 
             # 写入表格区域到共享产物，供table_extract读取
             if table_regions:
@@ -143,7 +157,9 @@ class FormatParseService(BaseModuleService):
             triggers["chunk_split"] = trig_chunk
             trig_layout = self._trigger_layout_restore(doc_id)
             triggers["layout_restore"] = trig_layout
-            trig_quality = self._trigger_quality_check(doc_id)
+            # 质检按真实批次号触发；归属不明（如同名文件跨批）时不猜测，
+            # 由人工在批次质检入口显式按批次重算
+            trig_quality = self._trigger_quality_check(batch_key or doc_id)
             triggers["extract_quality"] = trig_quality
 
             return {

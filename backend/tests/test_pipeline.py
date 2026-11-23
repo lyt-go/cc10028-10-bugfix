@@ -33,6 +33,14 @@ def _uid(prefix="ID"):
     return f"{prefix}-{_uuid.uuid4().hex[:8].upper()}"
 
 
+def _onboard_test_batch(batch_key, doc_id):
+    """登记测试批次，使归属校验能按接入清单确认产物来源。"""
+    FileIntakeService().onboard_batch({
+        "批次编号": batch_key, "来源系统": "测试来源组", "文件清单": f"{doc_id}.pdf",
+        "文件类型": "PDF", "字节总量": "1024000", "校验值": "", "采集方式": "接口", "接入游标": "0",
+    })
+
+
 class TestFileIntakeToFormatParse:
     """链路1：文件接入→格式解析"""
 
@@ -227,6 +235,8 @@ class TestSecondaryLinks:
 
     def test_extract_quality_reports(self):
         doc_id = _uid("DD")
+        batch_key = _uid("BI")
+        _onboard_test_batch(batch_key, doc_id)
         parse_svc = FormatParseService()
         task, _ = parse_svc.create_entry({
             "任务编号": _uid("PR"), "文档编号": doc_id, "解析器类型": "PDF",
@@ -236,9 +246,11 @@ class TestSecondaryLinks:
         EntityRecognizeService().recognize_from_chunk(f"{doc_id}_parsed")
         RelationExtractService().extract_from_entities(f"{doc_id}_parsed")
         quality_svc = ExtractQualityService()
-        result = quality_svc.check_from_batch(doc_id)
+        result = quality_svc.check_from_batch(batch_key)
         assert "error" not in result, result.get("error", "")
         assert result["accuracy"] > 0
+        # 归属证据：本批证据只含本批次记录，不扫全局候选
+        assert result["evidence_records"] > 0
 
 
 class TestDocVersionDelivery:
@@ -285,6 +297,8 @@ class TestLineageReview:
 
     def test_create_review_tasks(self):
         doc_id = _uid("DD")
+        batch_key = _uid("BI")
+        _onboard_test_batch(batch_key, doc_id)
         parse_svc = FormatParseService()
         task, _ = parse_svc.create_entry({
             "任务编号": _uid("PR"), "文档编号": doc_id, "解析器类型": "PDF",
@@ -294,8 +308,10 @@ class TestLineageReview:
         EntityRecognizeService().recognize_from_chunk(f"{doc_id}_parsed")
         RelationExtractService().extract_from_entities(f"{doc_id}_parsed")
         review_svc = AnnotReviewService()
-        result = review_svc.create_review_tasks(doc_id, threshold=0.99)
+        result = review_svc.create_review_tasks(batch_key, threshold=0.99)
         assert result["tasks_created"] > 0
+        # 派单按来源负责组分流
+        assert result["groups"], "应至少派给一个来源负责组"
 
 
 class TestParseRetry:

@@ -16,6 +16,7 @@ from app.services.vector_embed import VectorEmbedService
 from app.services.kg_build import KgBuildService
 from app.services.extract_quality import ExtractQualityService
 from app.services.annot_review import AnnotReviewService
+from app.services.batch_attribution import BatchAttributionService
 from app.services.doc_version import DocVersionService
 from app.services.extract_lineage import ExtractLineageService
 from app.services.result_deliver import ResultDeliverService
@@ -36,6 +37,7 @@ SERVICES: dict[str, BaseModuleService] = {
     "kg_build": KgBuildService(),
     "extract_quality": ExtractQualityService(),
     "annot_review": AnnotReviewService(),
+    "batch_attribution": BatchAttributionService(),
     "doc_version": DocVersionService(),
     "extract_lineage": ExtractLineageService(),
     "result_deliver": ResultDeliverService(),

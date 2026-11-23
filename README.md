@@ -16,6 +16,8 @@
 │   └── vite.config.ts        dev server 配置（open: false）
 ├── backend/                  FastAPI（Python） 后端
 │   ├── app/routers/resource.py  通用查询/导出/登记/动作接口
+│   ├── app/routers/batch_ops.py 批次归属/质检证据集/复核派单专用接口
+│   ├── app/services/batch_attribution.py 批次归属校验与证据集（归属唯一权威入口）
 │   ├── app/services/<key>.py    每个模块独立领域逻辑
 │   ├── app/services/base.py     共享服务骨架
 │   └── app/store.py          内存数据仓库与示例数据
@@ -76,6 +78,12 @@ npm run dev
   `frontend/src/domain/<模块>.ts`，用于承载真实业务差异并维持36题位容量。
 - 列表接口统一返回 `{ items, total, page, size }`，动作接口统一返回 `{ ok, message }`。
 - 状态流转只允许在 `app/services` 里改，路由层不做业务判断。
+- 批次归属（实体/关系源记录属于哪个接入批次）只能用证据确认，证据优先级：
+  记录内 `batch_key` → `data/provenance/artifact_sources.jsonl` 处理来源登记 →
+  接入清单文档编号匹配；同名文件跨批且无更强证据时不猜测，登记为待核
+  （`data/provenance/unresolved.jsonl`）。质检报告与人工复核只消费
+  `data/quality_evidence/{批次}_evidence.jsonl` 批次证据集，不扫描全局候选，
+  重算报告时待核历史数据不计入当前批次。批次专用接口前缀为 `/api/batches`。
 
 领域：数据工程
 子方向：数据采集、爬虫与RPA

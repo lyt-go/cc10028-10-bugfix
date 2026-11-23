@@ -48,6 +48,10 @@ class ChunkSplitService(BaseModuleService):
         chunk_size = 512
         overlap = 50
 
+        # 归属证据：批次键沿解析产物向下游透传，保证同名文件不串批
+        batch_key = next((str(r.get("batch_key", "")).strip()
+                          for r in parsed_records if r.get("batch_key")), "")
+
         chunks = []
         chunk_seq = 0
         for rec in parsed_records:
@@ -66,6 +70,7 @@ class ChunkSplitService(BaseModuleService):
                         chunks.append({
                             "chunk_id": f"CHUNK-{rec['doc_id']}-{chunk_seq:04d}",
                             "doc_id": rec["doc_id"],
+                            "batch_key": batch_key,
                             "page": rec.get("page_num", 1),
                             "seq": chunk_seq,
                             "length": len(current_chunk),
@@ -87,6 +92,7 @@ class ChunkSplitService(BaseModuleService):
                 chunks.append({
                     "chunk_id": f"CHUNK-{rec['doc_id']}-{chunk_seq:04d}",
                     "doc_id": rec["doc_id"],
+                    "batch_key": batch_key,
                     "page": rec.get("page_num", 1),
                     "seq": chunk_seq,
                     "length": len(current_chunk),
@@ -99,6 +105,13 @@ class ChunkSplitService(BaseModuleService):
 
         output_path = self._data_dir("chunks") / f"{parsed_doc_id}_chunks.jsonl"
         written = self._write_jsonl(output_path, chunks)
+
+        # 处理来源登记：分块产物归属到解析记录携带的批次
+        if batch_key:
+            from app.services.batch_attribution import BatchAttributionService
+            doc_id = parsed_records[0].get("doc_id", "")
+            BatchAttributionService().register_artifact_source(
+                batch_key, doc_id, output_path.name, "chunks")
 
         # 写入检查点
         self._write_checkpoint(f"chunk_{parsed_doc_id}", {
